@@ -1,0 +1,155 @@
+mainmodule leanmd {
+  include "pup_stl.h";
+
+  @READONLY@
+
+  readonly std::string logs;   // log file for checkpointing
+
+  //central controller chare
+  @MAIN_KIND@ [migratable] Main { 
+    @MAIN_ENTRIES@
+    entry [reductiontarget] void energySum(double iE, double fE);  //reduction of potential energy
+
+    // called when computes have been created
+    entry [reductiontarget] void run() {
+      serial {
+        computeArray.doneInserting();
+        CkPrintf("Computes: %d .... created\n", (NUM_NEIGHBORS/2+1)*cellArrayDimX*cellArrayDimY*cellArrayDimZ);
+        CkPrintf("Starting simulation .... \n\n");
+        cellArray.run();
+        computeArray.run();
+        startBenchmarkTime = CkWallTimer();
+      }
+      //receive intial and final energies and compare
+      when energySum(double iE1, double fE1) when energySum(double iE2, double fE2) serial {
+        if(fabs(fE1 + fE2 - iE1 - iE2) > ENERGY_VAR) {
+          CkPrintf("Energy value has varied significantly from %E to %E\n", iE1 + iE2, fE1 + fE2);
+          CkPrintf("\nEnergy conservation test failed for maximum allowed variation of %E units.\nSIMULATION UNSUCCESSFULL\n",ENERGY_VAR);  
+        } else {
+          CkPrintf("\nEnergy conservation test passed for maximum allowed variation of %E units.\nSIMULATION SUCCESSFULL \n",ENERGY_VAR);
+        }
+        CkPrintf("Total application time %f s\n", (CkWallTimer() - startBenchmarkTime));
+        CkExit();
+      }
+    };
+  };
+
+  //message used to send particles to computes
+  message ParticleDataMsg{
+    vec3 part[];
+  };
+
+  group CellMap {
+    entry CellMap(int cell_x, int cell_y, int cell_z);
+  }
+
+  //chares to house atoms
+  @CELL_KIND@ Cell {
+    @CELL_ENTRIES@  
+    entry void receiveParticles(const std::vector<Particle> &updates);   //receive atoms that have migrated to neighboring cells to me
+    entry void ResumeFromSync();    //resume from here after load balancing
+    entry [reductiontarget] void startCheckpoint(); //reduction to start checkpointing
+    entry void recvCheckPointDone();  //checkpointing done, resume application
+    entry [reductiontarget] void reduceForces(vec3 forces[n], int n);   //receives forces from my computes on my atoms
+
+    //function to perform iterations for Cells
+    entry void run() {
+      if (thisIndex.x==0 && thisIndex.y==0 && thisIndex.z==0) serial {
+        stepTime = CkWallTimer();
+      }
+
+      serial { createSection(); }
+
+      for(stepCount = 1; stepCount <= finalStepCount; stepCount++) {
+        //send current atom positions to my computes 
+        serial { sendPositions(); } 
+
+        //update properties of atoms using new force values 
+        when reduceForces(vec3 forces[n], int n) serial { updateProperties(forces); }
+
+        if ((stepCount %  MIGRATE_STEPCOUNT) == 0) {
+          //send atoms that have moved beyond my cell to neighbors
+          serial { migrateParticles(); } 
+    
+          //receive particles from my neighbors
+          for(updateCount = 0; updateCount < inbrs; updateCount++) {
+            when receiveParticles(const std::vector<Particle> &updates) serial {
+              for (int i = 0; i < updates.size(); ++i)
+                particles.push_back(updates[i]); //add particles that have moved from neighboring cells to my cell
+            }
+          }
+        }
+
+        if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0) serial {
+          CkPrintf("Step %d Benchmark Time %lf ms/step\n", 
+          stepCount, ((CkWallTimer() - stepTime))*1000);
+          stepTime = CkWallTimer();
+        }
+
+        //periodically call load balancer
+        if (stepCount >= firstLdbStep && (stepCount - firstLdbStep) % ldbPeriod == 0) {
+          serial { AtSync(); }
+          when ResumeFromSync() { }
+        }
+
+        //periodically checkpointing
+        if (stepCount % checkptFreq == 0) {
+          serial {
+            //coordinate to start checkpointing
+            if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0)
+              CkPrintf("[%d] CHECKPOINT at step %d\n", CkMyPe(), stepCount);
+            contribute(CkCallback(CkReductionTarget(Cell,startCheckpoint),thisProxy(0,0,0)));
+          }
+          if (thisIndex.x == 0 && thisIndex.y == 0 && thisIndex.z == 0) {
+            when startCheckpoint() serial {
+              CkCallback cb(CkIndex_Cell::recvCheckPointDone(),thisProxy);
+              if (checkptStrategy == 0) CkStartCheckpoint(logs.c_str(), cb);
+              else CkStartMemCheckpoint(cb);
+            }
+          }
+          when recvCheckPointDone() { }
+        }
+
+#if CMK_MEM_CHECKPOINT
+
+        //kill one of processes to demonstrate fault tolerance
+        if (stepCount == 60 && thisIndex.x == 1 && thisIndex.y == 1 && thisIndex.z == 0) serial {
+          if (CkHasCheckpoints()) {
+            CkPrintf("CkDieNow step 60\n");
+            CkDieNow();
+          }
+        }
+#endif
+      }
+
+      //everything done, reduction on kinetic energy
+      serial { contribute(2*sizeof(double), energy,CkReduction::sum_double, CkCallback(CkReductionTarget(Main,energySum),mainProxy)); }
+    };
+  };
+
+  //chares that do force computations for pair of cells
+  @COMPUTE_KIND@ Compute {
+    @COMPUTE_ENTRIES@
+    entry void ResumeFromSync();
+    entry void calculateForces(ParticleDataMsg *msg);
+
+    entry void run() {
+      for (stepCount = 1; stepCount <= finalStepCount; stepCount++) {
+        //self interaction check
+        if (thisIndex.x1==thisIndex.x2 && thisIndex.y1==thisIndex.y2 && thisIndex.z1==thisIndex.z2)
+          when calculateForces(ParticleDataMsg *msg) serial { selfInteract(msg); }
+        else
+          //receive positions from two cells
+          when calculateForces(ParticleDataMsg *msg1) when calculateForces(ParticleDataMsg *msg2) serial { interact(msg1, msg2); }
+        //periodically call load balancer
+        if (stepCount >= firstLdbStep && (stepCount - firstLdbStep) % ldbPeriod== 0) {
+          serial { AtSync();}
+          when ResumeFromSync() { }
+        }
+      }
+      //everything done, reduction on potential energy
+      serial { contribute(2*sizeof(double),energy, CkReduction::sum_double, CkCallback(CkReductionTarget(Main,energySum),mainProxy)); }
+    };
+  };
+};
+
