@@ -42,6 +42,9 @@ def assemble(compiler, output):
     types, rest = definitions.split('#include "leanmd.decl.h"', 1)
     (output / 'types.h').write_text('#include <cmath>\n#include <string>\n#include <vector>\n' + types + '\n#endif\n')
     shutil.copyfile(ROOT / 'physics.h', output / 'physics.h')
+    # physics.h still includes defs.h. Its original guard is already set by
+    # force-included types.h, but the header must exist for include lookup.
+    shutil.copyfile(ROOT / 'defs.h', output / 'defs.h')
     for name in ['Main', 'Cell', 'Compute']:
         source = (ROOT / (name + '.cc')).read_text()
         # Remove only includes supplied by the single generated translation unit.

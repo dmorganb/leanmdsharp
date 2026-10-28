@@ -59,6 +59,7 @@ def main(compiler):
             assert cpp.count(name + '_SDAG_CODE') == 1
         assert cpp.count('#include "leanmd.def.h"') == 1
         assert (out / 'physics.h').read_bytes() == (ROOT / 'physics.h').read_bytes()
+        assert (out / 'defs.h').read_bytes() == (ROOT / 'defs.h').read_bytes()
         results = []
         for name, (source, error) in PROBES.items():
             fixture = Path(temp) / (name + '.csh')
