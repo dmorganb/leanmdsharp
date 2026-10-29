@@ -18,8 +18,8 @@ def assemble(compiler, output):
     generated = (raw / 'leanmd.ci').read_text()
     template = (HERE / 'legacy.ci.in').read_text()
     readonly = re.findall(r'^\s*(readonly [^;]+;)', generated, re.M)
-    if len(readonly) != 12:
-        raise ValueError('Expected exactly 12 migrated readonly declarations')
+    if len(readonly) != 13:
+        raise ValueError('Expected exactly 13 migrated readonly declarations')
     template = template.replace('@READONLY@', '\n  '.join(readonly))
     for name, count in [('Main', 1), ('Cell', 2), ('Compute', 1)]:
         match = re.search(r'(mainchare|array \[\d+D\]) ' + name +
@@ -41,6 +41,7 @@ def assemble(compiler, output):
     definitions = (ROOT / 'defs.h').read_text()
     types, rest = definitions.split('#include "leanmd.decl.h"', 1)
     (output / 'types.h').write_text('#include <cmath>\n#include <string>\n#include <vector>\n' + types + '\n#endif\n')
+    shutil.copyfile(HERE / 'compat_types.h', output / 'compat_types.h')
     shutil.copyfile(ROOT / 'physics.h', output / 'physics.h')
     # physics.h still includes defs.h. Its original guard is already set by
     # force-included types.h, but the header must exist for include lookup.

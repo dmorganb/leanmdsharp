@@ -1,0 +1,12 @@
+mainmodule ReadonlyReference {
+    include "pup_stl.h";
+    readonly std::string logs;
+    readonly CProxy_Main mainProxy;
+    mainchare Main {
+        entry Main(CkArgMsg* msg);
+        entry void done();
+    };
+    array [1D] LogReader {
+        entry LogReader();
+    };
+};
