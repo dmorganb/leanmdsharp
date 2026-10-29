@@ -3,13 +3,14 @@
 This is a **partial migration**, with a LeanMD-specific build adapter. The
 compiler is unchanged. Native Charm# owns the `Main`, 3D `Cell`, and 6D `Compute`
 class declarations, their three entry constructors, `Cell::createComputes`,
-and all thirteen readonly globals (the string uses a standard C++ alias). Ordinary C++ members, migration constructors,
-PUP routines and numerical kernels retain their original implementations.
+and all thirteen readonly globals (the string uses a standard C++ alias).
+Ordinary C++ members, migration constructors, PUP routines and numerical
+kernels retain their original implementations.
 
 All three SDAG `run()` routines, their receive declarations and reduction
 attributes, the migratable-mainchare flag, variable-size message metadata,
-`CellMap` registration remain in `legacy.ci.in`. No claim is made that these have been migrated to native
-Charm# syntax. `ParticleDataMsg` and `CellMap` remain ordinary C++ in the `.csh`
+and `CellMap` registration remain in `legacy.ci.in`. No claim is made that
+these have been migrated to native Charm# syntax. `ParticleDataMsg` and `CellMap` remain ordinary C++ in the `.csh`
 source; putting them in this file does not make them native Charm# declarations.
 
 ## Pinned inputs
@@ -51,7 +52,9 @@ compatible fault-tolerant runtime configuration; that configuration is untested.
 
 ## Why an adapter is required
 
-Charm# currently emits one complete `.ci` module and one `.cpp` per input.
+For this non-template application, Charm# emits one complete `.ci` module
+and one `.cpp`. Its additional template artifacts do not resolve the
+non-template integration boundaries below.
 It cannot natively merge legacy and generated entries belonging to the same
 parallel class, or place required user types before the generated `.decl.h`.
 Simply compiling both complete interfaces would duplicate registrations.
@@ -89,8 +92,11 @@ newly validated use of existing syntax, not a feature unlocked by Phase 6.
   reviewed normalization of `readonly LeanMDLogPath logs` to `std::string`.
   The runtime alias fixture also checks the C++ types are identical.
 - All twelve original files still match upstream Git blob hashes.
-- Native compile/run results for this revision must be read from the PR's
-  `Incremental CharmSharp port` workflow. They are pending at PR creation.
+- Native compilation and all twelve executions passed on implementation
+  commit `43302eb268cea95c4bd506cc5800a6144b918b3e` in
+  [CI run 40798678837](https://github.com/dmorganb/leanmdsharp/actions/runs/40798678837).
+  Both translation and runtime jobs succeeded. Subsequent documentation-only
+  edits do not change the tested program.
 
 The runtime comparison retains eight original/hybrid executions (1/2 PEs,
 5/21 steps). A second, independent pair compares non-empty readonly string

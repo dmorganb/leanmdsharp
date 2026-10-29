@@ -234,9 +234,16 @@ gaps, not observed runtime defects. Do not classify the unsupported Charm#
 Local evidence: the new compiler passes 546 checks plus CLI tests; the old and
 new pins both pass the twelve migration probes with the documented outcomes.
 All twelve original repository files retain their upstream Git blob hashes.
-CI pins both toolchains and checks native compilation, eight application runs,
-and four readonly-reference/alias runs. See the PR's current CI results for
-runtime status; no runtime success is assumed merely from translation.
+Native validation succeeded for implementation commit
+`43302eb268cea95c4bd506cc5800a6144b918b3e` in
+[CI run 40798678837](https://github.com/dmorganb/leanmdsharp/actions/runs/40798678837):
+both translation and runtime jobs passed. Original and hybrid LeanMD each
+compiled and passed 5/21-step cases on 1/2 PEs (eight executions total), with
+correct step counts and successful energy-conservation checks. The independent
+readonly-reference/alias pair also passed on 1/2 PEs (four more executions),
+including non-empty string reads on PE 1. The `leanmd-runtime-evidence` artifact
+contains twelve logs and the JSON summary. Both toolchains are pinned in CI.
+These checks establish the stated invariants, not exact trajectory equality.
 
 Recommended next discussion: nested receive semantics and the explicit-array
 subset would unlock much larger portions than further template work. Decide
