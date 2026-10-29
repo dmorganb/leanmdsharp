@@ -23,7 +23,12 @@ def interface(text):
     while i < len(ts):
         if ts[i] == 'readonly':
             end = ts.index(';', i) + 1
-            globals_.append(tuple(ts[i:end]))
+            declaration = ts[i:end]
+            # Only this exact declaration uses the reviewed std::string alias.
+            # Do not normalize other identifiers or mask any SDAG changes.
+            if declaration == ['readonly', 'LeanMDLogPath', 'logs', ';']:
+                declaration = ['readonly', 'std', ':', ':', 'string', 'logs', ';']
+            globals_.append(tuple(declaration))
             i = end
         else:
             other.append(ts[i])
@@ -37,6 +42,12 @@ PROBES = {
     'trailing_array_length': ('array [3D] chare Cell { entry: void reduceForces(double forces[n], int n); };', 'marshalled array bound must name an earlier integer parameter'),
     'variable_message': ('message ParticleDataMsg { public: vec3 part[]; };', 'variable-size message arrays are deferred'),
     'complex_readonly': ('readonly std::string logs;', 'expected readonly Type name;'),
+    'aliased_readonly': ('#include <string>\nusing LeanMDLogPath = std::string;\nreadonly LeanMDLogPath logs;', None),
+    'external_cellmap_base': ('#include "charm++.h"\ngroup CellMap : public CkArrayMap { entry: CellMap(int x, int y, int z); };', 'unresolved or later-defined C++ base type'),
+    'conditional_sdag': ('chare Worker { entry: void run() {\nwhen ready() {}\n#if CMK_MEM_CHECKPOINT\nif (stepCount == 60) serial { CkDieNow(); }\n#endif\n} };', "expected ';' in ordinary statement"),
+    # Current asymmetry: inferred receives skip explicit-entry array validation.
+    # Acceptance is recorded, not used as a supported workaround for LeanMD.
+    'inferred_custom_array': ('array [3D] chare Cell { entry: void run() { when reduceForces(vec3 forces[n], int n) { updateProperties(forces); } } };', None),
     'migratable_main': ('mainchare [migratable] Main { entry: Main(CkArgMsg* msg); };', 'expected a parallel type name'),
     'chained_receive': ('chare Compute { entry: void run() { when calculateForces(ParticleDataMsg *msg1) when calculateForces(ParticleDataMsg *msg2) { interact(msg1, msg2); } } };', 'expected SDAG receive body'),
     'nested_receive': ('chare Compute { entry: void run() { when calculateForces(ParticleDataMsg *msg1) { when calculateForces(ParticleDataMsg *msg2) { interact(msg1, msg2); } } } };', 'nested SDAG awaits are deferred'),
@@ -60,6 +71,10 @@ def main(compiler):
         assert cpp.count('#include "leanmd.def.h"') == 1
         assert (out / 'physics.h').read_bytes() == (ROOT / 'physics.h').read_bytes()
         assert (out / 'defs.h').read_bytes() == (ROOT / 'defs.h').read_bytes()
+        assert (out / 'compat_types.h').read_bytes() == (HERE / 'compat_types.h').read_bytes()
+        assert 'using LeanMDLogPath = std::string;' in (out / 'compat_types.h').read_text()
+        assert 'readonly LeanMDLogPath logs;' in (out / 'raw' / 'leanmd.ci').read_text()
+        assert 'readonly std::string logs;' not in (HERE / 'legacy.ci.in').read_text()
         results = []
         for name, (source, error) in PROBES.items():
             fixture = Path(temp) / (name + '.csh')
@@ -71,7 +86,7 @@ def main(compiler):
                 assert result.returncode != 0 and error in result.stderr, name + ': ' + result.stderr
             results.append({'probe': name, 'accepted': result.returncode == 0, 'diagnostic': result.stderr.strip()})
         print(json.dumps(results, indent=2))
-    print('PASS: 12 original files unchanged; interface and SDAG token-equivalent; 8 coverage probes')
+    print('PASS: 12 original files unchanged; interface/SDAG equivalent after exact logs alias normalization; ' + str(len(PROBES)) + ' coverage probes')
 
 
 if __name__ == '__main__':

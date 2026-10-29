@@ -1,6 +1,6 @@
 // Incremental LeanMD port. Unsupported metadata and SDAG live in legacy.ci.in.
 // Build with Makefile in this directory; see README.md for the assembly adapter.
-#include "types.h"
+#include "compat_types.h"
 #include "ckmulticast.h"
 #include <string>
 #include <vector>
@@ -18,8 +18,9 @@ readonly int ldbPeriod;
 readonly int checkptFreq;
 readonly int checkptStrategy;
 readonly int bFactor;
-// Complex readonly metadata remains in the legacy interface.
-std::string logs;
+// A standard C++ alias retains std::string semantics within the supported
+// single-token readonly subset. The alias must precede generated .decl.h.
+readonly LeanMDLogPath logs;
 
 //data message to be sent to computes
 struct ParticleDataMsg : public CkMcastBaseMsg, public CMessage_ParticleDataMsg {
